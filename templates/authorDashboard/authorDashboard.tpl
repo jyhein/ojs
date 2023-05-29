@@ -122,7 +122,7 @@
 								v-bind="components.contributors"
 								class="pkpWorkflow__contributors"
 								@set="set"
-								:items="workingPublication.authors"
+								:items="authorItems"
 								:publication="workingPublication"
 								:publication-api-url="submissionApiUrl + '/publications/' + workingPublication.id"
 								@updated:publication="setWorkingPublication"

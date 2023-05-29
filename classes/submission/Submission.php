@@ -70,8 +70,9 @@ class Submission extends PKPSubmission
                             $publication = $this->getCurrentPublication();
                         }
 
-                        $authorUserGroups = Repo::userGroup()->getCollector()->filterByRoleIds([\PKP\security\Role::ROLE_ID_AUTHOR])->filterByContextIds([$context->getId()])->getMany();
-                        $fieldValue = [$context->getPrimaryLocale() => $publication->getAuthorString($authorUserGroups)];
+                        //$authorUserGroups = Repo::userGroup()->getCollector()->filterByRoleIds([\PKP\security\Role::ROLE_ID_AUTHOR])->filterByContextIds([$context->getId()])->getMany();
+                        $contributorRoleTerms = \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms();
+                        $fieldValue = [$context->getPrimaryLocale() => $publication->getAuthorString($contributorRoleTerms)];
                         break;
                     case 'context':
                     case null:

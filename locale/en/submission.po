@@ -132,6 +132,24 @@ msgstr "Privacy Statement"
 msgid "submission.submit.contributorRole"
 msgstr "Contributor's role"
 
+msgid "submission.submit.contributorRoles.description"
+msgstr "Please select the contributor's roles according to the <a href=\"https://credit.niso.org/\" target="_new">NISO CRediT list</a>."
+
+msgid "submission.submit.contributorRoles.label"
+msgstr "Contributor Roles"
+
+msgid "submission.submit.contributorRoles.title"
+msgstr "Contributor roles title"
+
+msgid "submission.submit.creditRoles.description"
+msgstr "Please select the contributor's roles according to the <a href=\"https://credit.niso.org/\" target="_new">NISO CRediT list</a>."
+
+msgid "submission.submit.creditRoles.label"
+msgstr "CRediT Roles"
+
+msgid "submission.submit.creditRoles.title"
+msgstr "CRediT authorship contribution statement"
+
 msgid "submission.citationFormat.notFound"
 msgstr "The requested citation format could not be retrieved."
 

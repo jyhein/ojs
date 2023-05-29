@@ -56,7 +56,7 @@
 	<div class="meta">
 		{if $showAuthor}
 		<div class="authors">
-			{$publication->getAuthorString($authorUserGroups)|escape}
+			{$publication->getAuthorString($contributorRoleTerms)|escape}
 		</div>
 		{/if}
 

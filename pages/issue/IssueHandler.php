@@ -371,13 +371,12 @@ class IssueHandler extends Handler
             $issueSubmissionsInSection[$sectionId]['articles'][] = $submission;
         }
 
-        $authorUserGroups = Repo::userGroup()->getCollector()->filterByRoleIds([\PKP\security\Role::ROLE_ID_AUTHOR])->filterByContextIds([$journal->getId()])->getMany()->remember();
         $templateMgr->assign([
             'issue' => $issue,
             'issueGalleys' => $issueGalleyDao->getByIssueId($issue->getId()),
             'publishedSubmissions' => $issueSubmissionsInSection,
             'primaryGenreIds' => $primaryGenreIds,
-            'authorUserGroups' => $authorUserGroups,
+            'contributorRoleTerms' => \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms(),
         ]);
 
         // Subscription Access

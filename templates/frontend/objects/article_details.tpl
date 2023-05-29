@@ -117,10 +117,17 @@
 									{/if}
 								</span>
 							{/if}
-							{assign var=authorUserGroup value=$userGroupsById[$author->getData('userGroupId')]}
+							{* {assign var=authorUserGroup value=$userGroupsById[$author->getData('userGroupId')]}
 							{if $authorUserGroup->getShowTitle()}
 								<span class="userGroup">
 									{$authorUserGroup->getLocalizedName()|escape}
+								</span>
+							{/if} *}
+							{if $author->getData('contributorRoles')}
+								<span class="userGroup">
+								{foreach $author->getData('contributorRoles') as $role}
+									{$contributorRoleTerms.$role|escape}{if $role@last}.{else}{translate key="common.commaListSeparator"}{/if}
+								{/foreach}
 								</span>
 							{/if}
 							{if $author->getData('orcid')}
@@ -234,6 +241,30 @@
 						{/if}
 					{/foreach}
 					</ul>
+				</section>
+			{/if}
+
+			{* Author Credit Roles *}
+			{$authorCreditRoles = []}
+			{foreach $publication->getData('authors') as $author}
+				{$roles = $author->getData('creditRoles')}
+				{if $roles}
+					{$authorCreditRoles[$author->getFullName()|escape] = $roles}
+				{/if}
+			{/foreach}
+			{if !empty(count($authorCreditRoles))}
+				<section class="item author_creditRoles">
+					<h2 class="label">
+						{translate key="submission.submit.creditRoles.title"}
+					</h2>
+					<p class="authors">
+					{foreach $authorCreditRoles as $author => $roles}
+						<b>{$author}:</b> 
+						{foreach $roles as $role}
+							{$creditRoleTerms.$role|escape}{if $role@last}.{else}{translate key="common.commaListSeparator"}{/if}
+						{/foreach}
+					{/foreach}
+					</p>
 				</section>
 			{/if}
 

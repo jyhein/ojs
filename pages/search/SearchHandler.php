@@ -165,10 +165,7 @@ class SearchHandler extends Handler
             'simDocsEnabled' => true,
             'results' => $results,
             'error' => $error,
-            'authorUserGroups' => Repo::userGroup()->getCollector()
-                ->filterByRoleIds([\PKP\security\Role::ROLE_ID_AUTHOR])
-                ->filterByContextIds($searchFilters['searchJournal'] ? [$searchFilters['searchJournal']->getId()] : null)
-                ->getMany()->remember(),
+            'contributorRoleTerms' => \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms(),
             'searchResultOrderOptions' => $articleSearch->getResultSetOrderingOptions($request),
             'searchResultOrderDirOptions' => $articleSearch->getResultSetOrderingDirectionOptions(),
         ]);
