@@ -117,12 +117,6 @@
 									{/if}
 								</span>
 							{/if}
-							{* {assign var=authorUserGroup value=$userGroupsById[$author->getData('userGroupId')]}
-							{if $authorUserGroup->getShowTitle()}
-								<span class="userGroup">
-									{$authorUserGroup->getLocalizedName()|escape}
-								</span>
-							{/if} *}
 							{if $author->getData('contributorRoles')}
 								<span class="userGroup">
 								{foreach $author->getData('contributorRoles') as $role}
