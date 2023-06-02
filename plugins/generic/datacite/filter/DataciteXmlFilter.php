@@ -14,13 +14,16 @@
 
 namespace APP\plugins\generic\datacite\filter;
 
+use APP\author\Author;
 use APP\core\Application;
 use APP\core\Services;
 use APP\decision\Decision;
 use APP\facades\Repo;
 use APP\issue\Issue;
+use APP\issue\IssueGalleyDAO;
 use APP\plugins\generic\datacite\DataciteExportDeployment;
 use APP\plugins\generic\datacite\DataciteExportPlugin;
+use APP\publication\Publication;
 use APP\submission\Submission;
 use PKP\core\PKPString;
 use PKP\db\DAORegistry;
@@ -29,6 +32,7 @@ use PKP\galley\Galley;
 use PKP\i18n\LocaleConversion;
 use PKP\submission\Genre;
 use PKP\submission\GenreDAO;
+use PKP\submissionFile\SubmissionFile;
 
 // Title types
 define('DATACITE_TITLETYPE_TRANSLATED', 'TranslatedTitle');
@@ -47,6 +51,7 @@ define('DATACITE_IDTYPE_PROPRIETARY', 'publisherId');
 define('DATACITE_IDTYPE_EISSN', 'EISSN');
 define('DATACITE_IDTYPE_ISSN', 'ISSN');
 define('DATACITE_IDTYPE_DOI', 'DOI');
+define('DATACITE_IDTYPE_URL', 'URL');
 
 // Relation types
 define('DATACITE_RELTYPE_ISVARIANTFORMOF', 'IsVariantFormOf');
@@ -54,6 +59,7 @@ define('DATACITE_RELTYPE_HASPART', 'HasPart');
 define('DATACITE_RELTYPE_ISPARTOF', 'IsPartOf');
 define('DATACITE_RELTYPE_ISPREVIOUSVERSIONOF', 'IsPreviousVersionOf');
 define('DATACITE_RELTYPE_ISNEWVERSIONOF', 'IsNewVersionOf');
+define('DATACITE_RELTYPE_ISPUBLISHEDIN', 'IsPublishedIn');
 
 // Description types
 define('DATACITE_DESCTYPE_ABSTRACT', 'Abstract');
@@ -121,14 +127,16 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
                     $cache->add($article, null);
                 }
             }
-            if ($cache->isCached('genres', $galleyFile->getData('genreId'))) {
-                $genre = $cache->get('genres', $galleyFile->getData('genreId'));
-            } else {
-                /** @var GenreDAO */
-                $genreDao = DAORegistry::getDAO('GenreDAO');
-                $genre = $genreDao->getById($galleyFile->getData('genreId'));
-                if ($genre) {
-                    $cache->add($genre, null);
+            if (isset($galleyFile)) {
+                if ($cache->isCached('genres', $galleyFile->getData('genreId'))) {
+                    $genre = $cache->get('genres', $galleyFile->getData('genreId'));
+                } else {
+                    /** @var GenreDAO */
+                    $genreDao = DAORegistry::getDAO('GenreDAO');
+                    $genre = $genreDao->getById($galleyFile->getData('genreId'));
+                    if ($genre) {
+                        $cache->add($genre, null);
+                    }
                 }
             }
         }
@@ -243,6 +251,11 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
         if ($descriptionsNode) {
             $rootNode->appendChild($descriptionsNode);
         }
+        // relatedItems
+        $relatedItemsNode = $this->createRelatedItemsNode($doc, $issue, $article, $publication, $publisher, $objectLocalePrecedence);
+        if ($relatedItemsNode) {
+            $rootNode->appendChild($relatedItemsNode);
+        }
 
         return $doc;
     }
@@ -292,7 +305,11 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
                 // Check whether we have a supp file creator set...
                 $creator = $this->getPrimaryTranslation($galleyFile->getData('creator'), $objectLocalePrecedence);
                 if (!empty($creator)) {
-                    $creators[] = $creator;
+                    $creators[] = [
+                        'name' => $creator,
+                        'orcid' => null,
+                        'affiliation' => null
+                    ];
                     break;
                 }
                 // ...if not then go on by retrieving the publication
@@ -303,18 +320,38 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
                 $authors = $publication->getData('authors');
                 assert(!empty($authors));
                 foreach ($authors as $author) { /** @var Author $author */
-                    $creators[] = $author->getFullName(false, true);
+                    $creators[] = [
+                        'name' => $author->getFullName(false, true),
+                        'orcid' => $author->getOrcid(),
+                        'affiliation' => $author->getLocalizedData('affiliation', $publication->getData('locale'))
+                    ];
                 }
                 break;
             case isset($issue):
-                $creators[] = $publisher;
+                $creators[] = [
+                    'name' => $publisher,
+                    'orcid' => null,
+                    'affiliation' => null
+                ];
                 break;
         }
         assert(count($creators) >= 1);
         $creatorsNode = $doc->createElementNS($deployment->getNamespace(), 'creators');
         foreach ($creators as $creator) {
             $creatorNode = $doc->createElementNS($deployment->getNamespace(), 'creator');
-            $creatorNode->appendChild($node = $doc->createElementNS($deployment->getNamespace(), 'creatorName', htmlspecialchars($creator, ENT_COMPAT, 'UTF-8')));
+            $creatorNode->appendChild($node = $doc->createElementNS($deployment->getNamespace(), 'creatorName', htmlspecialchars($creator['name'], ENT_COMPAT, 'UTF-8')));
+            if ($creator['orcid']) {
+                $node = $doc->createElementNS($deployment->getNamespace(), 'nameIdentifier');
+                $node->appendChild($doc->createTextNode($creator['orcid']));
+                $node->setAttribute('schemeURI', 'http://orcid.org/');
+                $node->setAttribute('nameIdentifierScheme', 'ORCID');
+                $creatorNode->appendChild($node);
+            }
+            if ($creator['affiliation']) {
+                $node = $doc->createElementNS($deployment->getNamespace(), 'affiliation');
+                $node->appendChild($doc->createTextNode($creator['affiliation']));
+                $creatorNode->appendChild($node);
+            }
             $creatorsNode->appendChild($creatorNode);
         }
         return $creatorsNode;
@@ -652,13 +689,11 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
         switch (true) {
             case isset($galley):
                 // The galley represents the article.
-                $pages = $publication->getData('pages');
-                $path = $galleyFile->getData('path');
-                $size = Services::get('file')->fs->fileSize($path);
-                $sizes[] = Services::get('file')->getNiceFileSize($size);
-                break;
-            case isset($article):
-                $pages = $publication->getData('pages');
+                if (isset($galleyFile)) {
+                    $path = $galleyFile->getData('path');
+                    $size = Services::get('file')->fs->fileSize($path);
+                    $sizes[] = Services::get('file')->getNiceFileSize($size);
+                }
                 break;
             case isset($issue):
                 $issueGalleyDao = DAORegistry::getDAO('IssueGalleyDAO'); /** @var IssueGalleyDAO $issueGalleyDao */
@@ -671,9 +706,6 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
                 break;
             default:
                 assert(false);
-        }
-        if (!empty($pages)) {
-            $sizes[] = $pages . ' ' . __('editor.issues.pages');
         }
         $sizesNode = null;
         if (!empty($sizes)) {
@@ -707,11 +739,13 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
         $descriptions = [];
         switch (true) {
             case isset($galley):
-                $genre = $plugin->getCache()->get('genres', $galleyFile->getData('genreId'));
-                if ($genre->getSupplementary()) {
-                    $suppFileDesc = $this->getPrimaryTranslation($galleyFile->getData('description'), $objectLocalePrecedence);
-                    if (!empty($suppFileDesc)) {
-                        $descriptions[DATACITE_DESCTYPE_OTHER] = $suppFileDesc;
+                if (!$galley->getRemoteURL()) {
+                    $genre = $plugin->getCache()->get('genres', $galleyFile->getData('genreId'));
+                    if ($genre->getSupplementary()) {
+                        $suppFileDesc = $this->getPrimaryTranslation($galleyFile->getData('description'), $objectLocalePrecedence);
+                        if (!empty($suppFileDesc)) {
+                            $descriptions[DATACITE_DESCTYPE_OTHER] = $suppFileDesc;
+                        }
                     }
                 }
                 break;
@@ -731,10 +765,6 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
             default:
                 assert(false);
         }
-        if (isset($article)) {
-            // Articles and galleys.
-            $descriptions[DATACITE_DESCTYPE_SERIESINFO] = $this->getIssueInformation($issue, $objectLocalePrecedence);
-        }
         $descriptionsNode = null;
         if (!empty($descriptions)) {
             $descriptionsNode = $doc->createElementNS($deployment->getNamespace(), 'descriptions');
@@ -744,6 +774,93 @@ class DataciteXmlFilter extends \PKP\plugins\importexport\native\filter\NativeEx
             }
         }
         return $descriptionsNode;
+    }
+
+    /**
+     * Create related items node.
+     *
+     * @param \DOMDocument $doc
+     * @param Issue $issue
+     * @param Submission $article
+     * @param Publication $publication
+     * @param string $publisher
+     * @param array $objectLocalePrecedence
+     *
+     * @return ?\DOMElement Can be null if a size cannot be identified for the given object.
+     */
+    public function createRelatedItemsNode($doc, $issue, $article, $publication, $publisher, $objectLocalePrecedence)
+    {
+        /** @var DataciteExportDeployment */
+        $deployment = $this->getDeployment();
+        $context = $deployment->getContext();
+        $request = Application::get()->getRequest();
+
+        $relatedItemsNode = null;
+        if (isset($article)) {
+            $relatedItemsNode = $doc->createElementNS($deployment->getNamespace(), 'relatedItems');
+
+            $relatedItemNode = $doc->createElementNS($deployment->getNamespace(), 'relatedItem');
+            $relatedItemNode->setAttribute('relationType', DATACITE_RELTYPE_ISPUBLISHEDIN);
+            $relatedItemNode->setAttribute('relatedItemType', 'Journal');
+
+            if (null !== $context->getData('onlineIssn')) {
+                $relatedItemIdentifierNode = $doc->createElementNS($deployment->getNamespace(), 'relatedItemIdentifier', $context->getData('onlineIssn'));
+                $relatedItemIdentifierNode->setAttribute('relatedItemIdentifierType', DATACITE_IDTYPE_EISSN);
+            } elseif (null !== $context->getData('printIssn')) {
+                $relatedItemIdentifierNode = $doc->createElementNS($deployment->getNamespace(), 'relatedItemIdentifier', $context->getData('printIssn'));
+                $relatedItemIdentifierNode->setAttribute('relatedItemIdentifierType', DATACITE_IDTYPE_ISSN);
+            } else {
+                $contextUrl = $request->getDispatcher()->url(
+                    $request,
+                    Application::ROUTE_PAGE,
+                    $context->getPath()
+                );
+                $relatedItemIdentifierNode = $doc->createElementNS($deployment->getNamespace(), 'relatedItemIdentifier', $contextUrl);
+                $relatedItemIdentifierNode->setAttribute('relatedItemIdentifierType', DATACITE_IDTYPE_URL);
+            }
+            $relatedItemNode->appendChild($relatedItemIdentifierNode);
+
+            $titlesNode = $doc->createElementNS($deployment->getNamespace(), 'titles');
+            $titleNode = $doc->createElementNS($deployment->getNamespace(), 'title');
+            $titleNode->appendChild($doc->createTextNode($publisher));
+            $titlesNode->appendChild($titleNode);
+            $relatedItemNode->appendChild($titlesNode);
+
+            if ($issue->getVolume()) {
+                $relatedItemNode->appendChild($node = $doc->createElementNS($deployment->getNamespace(), 'volume', $issue->getVolume()));
+            }
+
+            $issueNode = $doc->createElementNS($deployment->getNamespace(), 'issue');
+            if ($issue->getNumber()) {
+                $issueNode->appendChild($doc->createTextNode($issue->getNumber()));
+            } else {
+                $issueNode->appendChild($doc->createTextNode($this->getIssueInformation($issue, $objectLocalePrecedence)));
+            }
+            $relatedItemNode->appendChild($issueNode);
+
+            $pages = $publication->getPageArray();
+            if (!empty($pages)) {
+                $firstRange = array_shift($pages);
+                $firstPage = array_shift($firstRange);
+                if (count($firstRange)) {
+                    // There is a first page and last page for the first range
+                    $lastPage = array_shift($firstRange);
+                } else {
+                    // There is not a range in the first segment
+                    $lastPage = '';
+                }
+                // No punctuation in first_page or last_page
+                if ((!empty($firstPage) || $firstPage === '0') && !preg_match('/[^[:alnum:]]/', $firstPage) && !preg_match('/[^[:alnum:]]/', $lastPage)) {
+                    $relatedItemNode->appendChild($node = $doc->createElementNS($deployment->getNamespace(), 'firstPage', $firstPage));
+                    if ($lastPage != '') {
+                        $relatedItemNode->appendChild($node = $doc->createElementNS($deployment->getNamespace(), 'lastPage', $lastPage));
+                    }
+                }
+            }
+
+            $relatedItemsNode->appendChild($relatedItemNode);
+        }
+        return $relatedItemsNode;
     }
 
 

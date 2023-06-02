@@ -23,11 +23,13 @@ use APP\facades\Repo;
 use APP\handler\Handler;
 use APP\issue\IssueAction;
 use APP\observers\events\UsageEvent;
+use APP\payment\ojs\OJSCompletedPaymentDAO;
 use APP\payment\ojs\OJSPaymentManager;
 use APP\security\authorization\OjsJournalMustPublishPolicy;
 use APP\submission\Submission;
 use APP\template\TemplateManager;
 use Firebase\JWT\JWT;
+use PKP\citation\CitationDAO;
 use PKP\config\Config;
 use PKP\core\PKPApplication;
 use PKP\db\DAORegistry;
@@ -42,7 +44,7 @@ use PKP\submissionFile\SubmissionFile;
 
 class ArticleHandler extends Handler
 {
-    /** @var \PKP\context\Context Context associated with the request */
+    /** @var \APP\journal\Journal Context associated with the request */
     public $context;
 
     /** @var ?\APP\issue\Issue Issue associated with the request */
@@ -387,7 +389,7 @@ class ArticleHandler extends Handler
      * For deprecated OJS 2.x URLs; see https://github.com/pkp/pkp-lib/issues/1541
      *
      * @param array $args
-     * @param \PKP\core\PKPRequest $request
+     * @param \APP\core\Request $request
      */
     public function viewFile($args, $request)
     {
@@ -403,7 +405,7 @@ class ArticleHandler extends Handler
      * For deprecated OJS 2.x URLs; see https://github.com/pkp/pkp-lib/issues/1541
      *
      * @param array $args
-     * @param \PKP\core\PKPRequest $request
+     * @param \APP\core\Request $request
      */
     public function downloadSuppFile($args, $request)
     {
@@ -443,7 +445,7 @@ class ArticleHandler extends Handler
      * Download an article file
      *
      * @param array $args
-     * @param \PKP\core\PKPRequest $request
+     * @param \APP\core\Request $request
      */
     public function download($args, $request)
     {

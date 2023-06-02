@@ -85,7 +85,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
         if (!$enabled) {
             $contextId = $this->getCurrentContextId();
             /** @var \PKP\context\ContextDAO $contextDao */
-            $contextDao = \APP\core\Application::getContextDAO();
+            $contextDao = Application::getContextDAO();
             $context = $contextDao->getById($contextId);
             if ($context->getData(Context::SETTING_CONFIGURED_REGISTRATION_AGENCY) === $this->getName()) {
                 $context->setData(Context::SETTING_CONFIGURED_REGISTRATION_AGENCY, Context::SETTING_NO_REGISTRATION_AGENCY);
@@ -98,7 +98,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
      * @param \APP\submission\Submission[] $submissions
      *
      */
-    public function exportSubmissions(array $submissions, \PKP\context\Context $context): array
+    public function exportSubmissions(array $submissions, Context $context): array
     {
         $exportPlugin = $this->_getExportPlugin();
         $xmlErrors = [];
@@ -107,8 +107,12 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
 
         foreach ($submissions as $submission) {
             $items[] = $submission;
-            foreach ($submission->getGalleys() as $galley) {
-                $items[] = $galley;
+            if (in_array(Repo::doi()::TYPE_REPRESENTATION, $context->getEnabledDoiTypes())) {
+                foreach ($submission->getGalleys() as $galley) {
+                    if ($galley->getDoi()) {
+                        $items[] = $galley;
+                    }
+                }
             }
         }
 
@@ -119,7 +123,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
     /**
      * @param \APP\submission\Submission[] $submissions
      */
-    public function depositSubmissions(array $submissions, \PKP\context\Context $context): array
+    public function depositSubmissions(array $submissions, Context $context): array
     {
         $exportPlugin = $this->_getExportPlugin();
         $responseMessage = '';
@@ -128,8 +132,12 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
 
         foreach ($submissions as $submission) {
             $items[] = $submission;
-            foreach ($submission->getGalleys() as $galley) {
-                $items[] = $galley;
+            if (in_array(Repo::doi()::TYPE_REPRESENTATION, $context->getEnabledDoiTypes())) {
+                foreach ($submission->getGalleys() as $galley) {
+                    if ($galley->getDoi()) {
+                        $items[] = $galley;
+                    }
+                }
             }
         }
 
@@ -144,7 +152,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
      * @param \APP\issue\Issue[] $issues
      *
      */
-    public function exportIssues(array $issues, \PKP\context\Context $context): array
+    public function exportIssues(array $issues, Context $context): array
     {
         $exportPlugin = $this->_getExportPlugin();
         $xmlErrors = [];
@@ -157,7 +165,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
      * @param Issue[] $issues
      *
      */
-    public function depositIssues(array $issues, \PKP\context\Context $context): array
+    public function depositIssues(array $issues, Context $context): array
     {
         $exportPlugin = $this->_getExportPlugin();
         $responseMessage = '';
@@ -181,7 +189,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
      */
     public function addAsRegistrationAgencyOption(string $hookName, array $args)
     {
-        /** @var Collection<IDoiRegistrationAgency> $enabledRegistrationAgencies */
+        /** @var Collection<int,IDoiRegistrationAgency> $enabledRegistrationAgencies */
         $enabledRegistrationAgencies = &$args[0];
         $enabledRegistrationAgencies->add($this);
     }
@@ -190,7 +198,7 @@ class DatacitePlugin extends GenericPlugin implements IDoiRegistrationAgency
      * Checks if plugin meets registration agency-specific requirements for being active and handling deposits
      *
      */
-    public function isPluginConfigured(\PKP\context\Context $context): bool
+    public function isPluginConfigured(Context $context): bool
     {
         $settingsObject = $this->getSettingsObject();
 

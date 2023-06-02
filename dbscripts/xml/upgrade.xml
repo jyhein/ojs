@@ -145,7 +145,6 @@
 		<migration class="PKP\migration\upgrade\v3_4_0\UpgradeMigration" />
 		<migration class="APP\migration\upgrade\v3_4_0\I6807_SetLastModified" />
 		<migration class="APP\migration\upgrade\v3_4_0\I4235_OAISetSpec" />
-		<migration class="PKP\migration\upgrade\v3_4_0\I7167_RemoveDuplicatedUserSettingsAndDeprecatedFields" />
 		<migration class="APP\migration\upgrade\v3_4_0\I7264_UpdateEmailTemplates"/>
 		<migration class="APP\migration\upgrade\v3_4_0\I7596_RemoveNonExpiring"/>
 		<migration class="APP\migration\upgrade\v3_4_0\I7014_DoiMigration"/>
@@ -199,6 +198,7 @@
 		<migration class="PKP\migration\upgrade\v3_4_0\I8508_ConvertCurrentLogFile"/>
 		<migration class="PKP\migration\upgrade\v3_4_0\I8866_DispatchRegionCodesFixingJobs"/>
 		<migration class="APP\migration\upgrade\v3_4_0\I8992_FixEmptyUrlPaths"/>
+		<migration class="APP\migration\upgrade\v3_4_0\I9040_DropSettingType"/>
 		<note file="docs/release-notes/README-3.4.0" />
 	</upgrade>
 
