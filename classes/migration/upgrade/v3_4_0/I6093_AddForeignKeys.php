@@ -15,6 +15,7 @@
 namespace APP\migration\upgrade\v3_4_0;
 
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class I6093_AddForeignKeys extends \PKP\migration\upgrade\v3_4_0\I6093_AddForeignKeys
@@ -91,6 +92,11 @@ class I6093_AddForeignKeys extends \PKP\migration\upgrade\v3_4_0\I6093_AddForeig
             $table->foreign('primary_contact_id', 'publications_primary_contact_id')->references('author_id')->on('authors')->onDelete('set null');
             $table->index(['primary_contact_id'], 'publications_primary_contact_id');
         });
+
+        // Attempt to drop the previous foreign key, which doesn't have the cascade rule
+        if (DB::getDoctrineSchemaManager()->introspectTable('publication_galleys')->hasForeignKey('publication_galleys_submission_file_id_foreign')) {
+            Schema::table('publication_galleys', fn (Blueprint $table) => $table->dropForeign('publication_galleys_submission_file_id_foreign'));
+        }
 
         Schema::table('publication_galleys', function (Blueprint $table) {
             $table->foreign('publication_id', 'publication_galleys_publication_id')->references('publication_id')->on('publications')->onDelete('cascade');
