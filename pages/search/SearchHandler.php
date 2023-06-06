@@ -165,7 +165,7 @@ class SearchHandler extends Handler
             'simDocsEnabled' => true,
             'results' => $results,
             'error' => $error,
-            'contributorRoleTerms' => \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms(),
+            'contributorRoleTerms' => \PKP\author\Author::getContributorRoleTerms(),
             'searchResultOrderOptions' => $articleSearch->getResultSetOrderingOptions($request),
             'searchResultOrderDirOptions' => $articleSearch->getResultSetOrderingDirectionOptions(),
         ]);

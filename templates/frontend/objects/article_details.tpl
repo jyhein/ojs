@@ -117,9 +117,9 @@
 									{/if}
 								</span>
 							{/if}
-							{if $author->getData('contributorRoles')}
+							{if $author->getContributorRoles()}
 								<span class="userGroup">
-								{foreach $author->getData('contributorRoles') as $role}
+								{foreach $author->getContributorRoles() as $role}
 									{$contributorRoleTerms.$role|escape}{if $role@last}.{else}{translate key="common.commaListSeparator"}{/if}
 								{/foreach}
 								</span>

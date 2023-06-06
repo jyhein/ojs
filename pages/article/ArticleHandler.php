@@ -221,8 +221,8 @@ class ArticleHandler extends Handler
             'galley' => $this->galley,
             'fileId' => $this->submissionFileId, // DEPRECATED in 3.4.0: https://github.com/pkp/pkp-lib/issues/6545
             'submissionFileId' => $this->submissionFileId,
-            'contributorRoleTerms' => \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms(),
-            'creditRoleTerms' => \PKP\components\forms\publication\ContributorForm::getCreditRoleTerms(),
+            'contributorRoleTerms' => \PKP\author\Author::getContributorRoleTerms(),
+            'creditRoleTerms' => \PKP\author\Author::getCreditRoleTerms(),
         ]);
         $this->setupTemplate($request);
 

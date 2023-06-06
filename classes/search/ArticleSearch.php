@@ -79,7 +79,7 @@ class ArticleSearch extends SubmissionSearch
         }
 
         $i = 0; // Used to prevent ties from clobbering each other
-        $contributorRoleTerms = \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms();
+        $contributorRoleTerms = \PKP\author\Author::getContributorRoleTerms();
         foreach ($unorderedResults as $submissionId => $data) {
             // Exclude unwanted IDs.
             if (in_array($submissionId, $exclude)) {

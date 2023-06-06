@@ -379,7 +379,7 @@ class IssueHandler extends Handler
             'issueGalleys' => $issueGalleyDao->getByIssueId($issue->getId()),
             'publishedSubmissions' => $issueSubmissionsInSection,
             'primaryGenreIds' => $primaryGenreIds,
-            'contributorRoleTerms' => \PKP\components\forms\publication\ContributorForm::getContributorRoleTerms(),
+            'contributorRoleTerms' => \PKP\author\Author::getContributorRoleTerms(),
         ]);
 
         // Subscription Access

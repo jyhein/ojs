@@ -69,7 +69,7 @@ class Submission extends PKPSubmission
                         if (!$publication) {
                             $publication = $this->getCurrentPublication();
                         }
-                        $fieldValue = [$context->getPrimaryLocale() => $publication->getAuthorString(\PKP\components\forms\publication\ContributorForm::getContributorRoleTerms())];
+                        $fieldValue = [$context->getPrimaryLocale() => $publication->getAuthorString(\PKP\author\Author::getContributorRoleTerms())];
                         break;
                     case 'context':
                     case null:
