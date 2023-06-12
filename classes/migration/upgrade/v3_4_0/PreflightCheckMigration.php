@@ -14,9 +14,10 @@
 
 namespace APP\migration\upgrade\v3_4_0;
 
-use Illuminate\Database\MySqlConnection;
-use Illuminate\Database\PostgresConnection;
+use Illuminate\Database\Query\Builder;
+use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PreflightCheckMigration extends \PKP\migration\upgrade\v3_4_0\PreflightCheckMigration
 {
@@ -35,163 +36,258 @@ class PreflightCheckMigration extends \PKP\migration\upgrade\v3_4_0\PreflightChe
         return 'journal_settings';
     }
 
-    public function up(): void
+    protected function buildOrphanedEntityProcessor(): void
     {
-        parent::up();
-        try {
-            // Clean orphaned sections entries by journal_id
-            $orphanedIds = DB::table('sections AS s')->leftJoin('journals AS j', 's.journal_id', '=', 'j.journal_id')->whereNull('j.journal_id')->distinct()->pluck('s.journal_id');
-            foreach ($orphanedIds as $journalId) {
-                DB::table('sections')->where('journal_id', '=', $journalId)->delete();
-            }
+        parent::buildOrphanedEntityProcessor();
 
-            // Clean orphaned sections entries by review_form_id
-            $orphanedIds = DB::table('sections AS s')->leftJoin('review_forms AS rf', 's.review_form_id', '=', 'rf.review_form_id')->whereNull('rf.review_form_id')->whereNotNull('s.review_form_id')->distinct()->pluck('s.review_form_id');
-            foreach ($orphanedIds as $reviewFormId) {
-                DB::table('sections')->where('review_form_id', '=', $reviewFormId)->update(['review_form_id' => null]);
-            }
+        $this->addTableProcessor('issues', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: doi_id->dois.doi_id(not found in previous version) journal_id->journals.journal_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('issues', $this->getContextKeyField(), $this->getContextTable(), $this->getContextKeyField());
+            return $affectedRows;
+        });
 
-            // Clean orphaned section_settings entries
-            $orphanedIds = DB::table('section_settings AS ss')->leftJoin('sections AS s', 'ss.section_id', '=', 's.section_id')->whereNull('s.section_id')->distinct()->pluck('ss.section_id');
-            foreach ($orphanedIds as $sectionId) {
-                DB::table('section_settings')->where('section_id', '=', $sectionId)->delete();
-            }
+        // Shared processor (there's another handler for this table at pkp-lib)
+        $this->addTableProcessor('publications', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~4 entities: primary_contact_id->authors.author_id doi_id->dois.doi_id(not found in previous version) section_id->sections.section_id submission_id->submissions.submission_id
+            // Custom field (not found in at least one of the softwares)
 
-            // Clean orphaned issues entries by journal_id
-            $orphanedIds = DB::table('issues AS i')->leftJoin('journals AS j', 'i.journal_id', '=', 'j.journal_id')->whereNull('j.journal_id')->distinct()->pluck('i.journal_id');
-            foreach ($orphanedIds as $journalId) {
-                DB::table('issues')->where('journal_id', '=', $journalId)->delete();
+            // Attempts to recover the field publications.section_id before discarding the entry
+            $rows = DB::table('publications AS p')
+                ->leftJoin('sections AS s', 's.section_id', '=', 'p.section_id')
+                ->join('submissions AS sub', 'sub.submission_id', '=', 'p.submission_id')
+                ->whereNull('s.section_id')
+                ->select('p.submission_id', 'p.publication_id', 'p.section_id')
+                ->selectSub(
+                    fn (Builder $q) => $q
+                        ->from('sections AS s')
+                        ->where('s.is_inactive', '=', 0)
+                        ->whereColumn('s.journal_id', '=', 'sub.context_id')
+                        ->selectRaw('MIN(s.section_id)'),
+                    'new_section_id'
+                )
+                ->get();
+            foreach ($rows as $row) {
+                $this->_installer->log("The publication ID ({$row->publication_id}) for the submission ID {$row->submission_id} is assigned to an invalid section ID \"{$row->section_id}\", its section will be updated to {$row->new_section_id}");
+                $affectedRows += DB::table('publications')->where('publication_id', '=', $row->publication_id)->update(['section_id' => $row->new_section_id]);
             }
+            $affectedRows += $this->deleteOptionalReference('publications', 'section_id', 'sections', 'section_id');
+            // Remaining cleanups are inherited
+            return $affectedRows;
+        });
 
-            // Clean orphaned issue_settings entries
-            $orphanedIds = DB::table('issue_settings AS is')->leftJoin('issues AS i', 'is.issue_id', '=', 'i.issue_id')->whereNull('i.issue_id')->distinct()->pluck('is.issue_id');
-            foreach ($orphanedIds as $issueId) {
-                DB::table('issue_settings')->where('issue_id', '=', $issueId)->delete();
-            }
+        $this->addTableProcessor('publication_galleys', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~3 entities: doi_id->dois.doi_id(not found in previous version) publication_id->publications.publication_id submission_file_id->submission_files.submission_file_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('publication_galleys', 'publication_id', 'publications', 'publication_id');
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteOptionalReference('publication_galleys', 'submission_file_id', 'submission_files', 'submission_file_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned issue_files entries by issue_id
-            $orphanedIds = DB::table('issue_files AS i_f')->leftJoin('issues AS i', 'i.issue_id', '=', 'i_f.issue_id')->whereNull('i.issue_id')->distinct()->pluck('i_f.issue_id');
-            foreach ($orphanedIds as $issueId) {
-                DB::table('issue_files')->where('issue_id', '=', $issueId)->delete();
-            }
+        $this->addTableProcessor('issue_galleys', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: file_id->issue_files.file_id issue_id->issues.issue_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('issue_galleys', 'issue_id', 'issues', 'issue_id');
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('issue_galleys', 'file_id', 'issue_files', 'file_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned issue_galleys entries by issue_id
-            $orphanedIds = DB::table('issue_galleys AS ig')->leftJoin('issues AS i', 'i.issue_id', '=', 'ig.issue_id')->whereNull('i.issue_id')->distinct()->pluck('ig.issue_id');
-            foreach ($orphanedIds as $issueId) {
-                DB::table('issue_galleys')->where('issue_id', '=', $issueId)->delete();
-            }
+        $this->addTableProcessor('sections', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: journal_id->journals.journal_id review_form_id->review_forms.review_form_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('sections', $this->getContextKeyField(), $this->getContextTable(), $this->getContextKeyField());
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->cleanOptionalReference('sections', 'review_form_id', 'review_forms', 'review_form_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned issue_galleys entries by file_id
-            $orphanedIds = DB::table('issue_galleys AS ig')->leftJoin('issue_files AS i_f', 'i_f.file_id', '=', 'ig.file_id')->whereNull('i_f.file_id')->distinct()->pluck('ig.file_id');
-            foreach ($orphanedIds as $fileId) {
-                DB::table('issue_galleys')->where('file_id', '=', $fileId)->delete();
-            }
+        $this->addTableProcessor('subscription_types', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: journal_id->journals.journal_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('subscription_types', $this->getContextKeyField(), $this->getContextTable(), $this->getContextKeyField());
+            return $affectedRows;
+        });
 
-            // Clean orphaned issue_galley_settings entries
-            $orphanedIds = DB::table('issue_galley_settings AS igs')->leftJoin('issue_galleys AS ig', 'igs.galley_id', '=', 'ig.galley_id')->whereNull('ig.galley_id')->distinct()->pluck('igs.galley_id');
-            foreach ($orphanedIds as $issueGalleyId) {
-                DB::table('issue_galley_settings')->where('galley_id', '=', $issueGalleyId)->delete();
-            }
+        $this->addTableProcessor('issue_files', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: issue_id->issues.issue_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('issue_files', 'issue_id', 'issues', 'issue_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned custom_issue_orders entries by issue_id
-            $orphanedIds = DB::table('custom_issue_orders AS cio')->leftJoin('issues AS i', 'i.issue_id', '=', 'cio.issue_id')->whereNull('i.issue_id')->distinct()->pluck('cio.issue_id');
-            foreach ($orphanedIds as $issueId) {
-                DB::table('custom_issue_orders')->where('issue_id', '=', $issueId)->delete();
-            }
+        $this->addTableProcessor('subscriptions', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~3 entities: journal_id->journals.journal_id type_id->subscription_types.type_id user_id->users.user_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('subscriptions', 'user_id', 'users', 'user_id');
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('subscriptions', 'type_id', 'subscription_types', 'type_id');
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('subscriptions', $this->getContextKeyField(), $this->getContextTable(), $this->getContextKeyField());
+            return $affectedRows;
+        });
 
-            // Clean orphaned custom_issue_orders entries by journal_id
-            $orphanedIds = DB::table('custom_issue_orders AS cio')->leftJoin('journals AS j', 'j.journal_id', '=', 'cio.journal_id')->whereNull('j.journal_id')->distinct()->pluck('cio.journal_id');
-            foreach ($orphanedIds as $journalId) {
-                DB::table('custom_issue_orders')->where('journal_id', '=', $journalId)->delete();
-            }
+        $this->addTableProcessor('completed_payments', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: context_id->journals.journal_id user_id->users.user_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('completed_payments', 'context_id', $this->getContextTable(), $this->getContextKeyField());
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteOptionalReference('completed_payments', 'user_id', 'users', 'user_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned custom_section_orders entries by issue_id
-            $orphanedIds = DB::table('custom_section_orders AS cso')->leftJoin('issues AS i', 'i.issue_id', '=', 'cso.issue_id')->whereNull('i.issue_id')->distinct()->pluck('cso.issue_id');
-            foreach ($orphanedIds as $issueId) {
-                DB::table('custom_section_orders')->where('issue_id', '=', $issueId)->delete();
-            }
+        $this->addTableProcessor('custom_issue_orders', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: issue_id->issues.issue_id journal_id->journals.journal_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('custom_issue_orders', $this->getContextKeyField(), $this->getContextTable(), $this->getContextKeyField());
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('custom_issue_orders', 'issue_id', 'issues', 'issue_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned custom_section_orders entries by section_id
-            $orphanedIds = DB::table('custom_section_orders AS cso')->leftJoin('sections AS s', 's.section_id', '=', 'cso.section_id')->whereNull('s.section_id')->distinct()->pluck('cso.section_id');
-            foreach ($orphanedIds as $sectionId) {
-                DB::table('custom_section_orders')->where('section_id', '=', $sectionId)->delete();
-            }
+        $this->addTableProcessor('custom_section_orders', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: issue_id->issues.issue_id section_id->sections.section_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('custom_section_orders', 'section_id', 'sections', 'section_id');
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('custom_section_orders', 'issue_id', 'issues', 'issue_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned publications entries by primary_contact_id
-            switch (true) {
-                case DB::connection() instanceof MySqlConnection:
-                    DB::statement('UPDATE publications p LEFT JOIN users u ON (p.primary_contact_id = u.user_id) SET p.primary_contact_id = NULL WHERE u.user_id IS NULL');
-                    break;
-                case DB::connection() instanceof PostgresConnection:
-                    DB::statement('UPDATE publications SET primary_contact_id = NULL WHERE publication_id IN (SELECT publication_id FROM publications p LEFT JOIN users u ON (p.primary_contact_id = u.user_id) WHERE u.user_id IS NULL AND p.primary_contact_id IS NOT NULL)');
-                    break;
-                default: throw new \Exception('Unknown database connection type!');
-            }
+        $this->addTableProcessor('institutional_subscriptions', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~2 entities: institution_id->institutions.institution_id(not found in previous version) subscription_id->subscriptions.subscription_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('institutional_subscriptions', 'subscription_id', 'subscriptions', 'subscription_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned publication_galleys entries by publication_id
-            $orphanedIds = DB::table('publication_galleys AS pg')->leftJoin('publications AS p', 'pg.publication_id', '=', 'p.publication_id')->whereNull('p.publication_id')->distinct()->pluck('pg.publication_id');
-            foreach ($orphanedIds as $publicationId) {
-                DB::table('publication_galleys')->where('publication_id', '=', $publicationId)->delete();
-            }
+        $this->addTableProcessor('issue_galley_settings', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: galley_id->issue_galleys.galley_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('issue_galley_settings', 'galley_id', 'issue_galleys', 'galley_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned publication_galley_settings entries
-            $orphanedIds = DB::table('publication_galley_settings AS pgs')->leftJoin('publication_galleys AS pg', 'pgs.galley_id', '=', 'pg.galley_id')->whereNull('pg.galley_id')->distinct()->pluck('pgs.galley_id');
-            foreach ($orphanedIds as $galleyId) {
-                DB::table('publication_galley_settings')->where('galley_id', '=', $galleyId)->delete();
-            }
+        $this->addTableProcessor('issue_settings', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: issue_id->issues.issue_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('issue_settings', 'issue_id', 'issues', 'issue_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned subscription_types entries by journal_id
-            $orphanedIds = DB::table('subscription_types AS st')->leftJoin('journals AS j', 'j.journal_id', '=', 'st.journal_id')->whereNull('j.journal_id')->distinct()->pluck('st.journal_id');
-            foreach ($orphanedIds as $journalId) {
-                DB::table('subscription_types')->where('journal_id', '=', $journalId)->delete();
-            }
+        $this->addTableProcessor('publication_galley_settings', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: galley_id->publication_galleys.galley_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('publication_galley_settings', 'galley_id', 'publication_galleys', 'galley_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned subscription_type_settings entries
-            $orphanedIds = DB::table('subscription_type_settings AS sts')->leftJoin('subscription_types AS st', 'sts.type_id', '=', 'st.type_id')->whereNull('st.type_id')->distinct()->pluck('sts.type_id');
-            foreach ($orphanedIds as $typeId) {
-                DB::table('subscription_type_settings')->where('type_id', '=', $typeId)->delete();
-            }
+        $this->addTableProcessor('section_settings', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: section_id->sections.section_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('section_settings', 'section_id', 'sections', 'section_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned subscriptions entries by journal_id
-            $orphanedIds = DB::table('subscriptions AS s')->leftJoin('journals AS j', 'j.journal_id', '=', 's.journal_id')->whereNull('j.journal_id')->distinct()->pluck('s.journal_id');
-            foreach ($orphanedIds as $journalId) {
-                DB::table('subscriptions')->where('journal_id', '=', $journalId)->delete();
-            }
+        $this->addTableProcessor('subscription_type_settings', function (): int {
+            $affectedRows = 0;
+            // Depends directly on ~1 entities: type_id->subscription_types.type_id
+            // Custom field (not found in at least one of the softwares)
+            $affectedRows += $this->deleteRequiredReference('subscription_type_settings', 'type_id', 'subscription_types', 'type_id');
+            return $affectedRows;
+        });
 
-            // Clean orphaned subscriptions entries by user_id
-            $orphanedIds = DB::table('subscriptions AS s')->leftJoin('users AS u', 'u.user_id', '=', 's.user_id')->whereNull('u.user_id')->distinct()->pluck('s.user_id');
-            foreach ($orphanedIds as $userId) {
-                DB::table('subscriptions')->where('user_id', '=', $userId)->delete();
+        // Support for the issueId setting
+        $this->addTableProcessor('publication_settings', function (): int {
+            $affectedRows = 0;
+            $rows = DB::table('publications AS p')
+                ->join('publication_settings AS ps', 'ps.publication_id', '=', 'p.publication_id')
+                ->leftJoin('issues AS i', DB::raw('CAST(i.issue_id AS CHAR(20))'), '=', 'ps.setting_value')
+                ->where('ps.setting_name', 'issueId')
+                ->whereNull('i.issue_id')
+                ->get(['p.submission_id', 'p.publication_id', 'ps.setting_value']);
+            foreach ($rows as $row) {
+                $this->_installer->log("The publication ID ({$row->publication_id}) for the submission ID {$row->submission_id} is assigned to an invalid issue ID \"{$row->setting_value}\", its value will be updated to NULL");
+                $affectedRows += DB::table('publication_settings')
+                    ->where('publication_id', '=', $row->publication_id)
+                    ->where('setting_name', 'issueId')
+                    ->where('setting_value', $row->setting_value)
+                    ->delete();
             }
+            return $affectedRows;
+        });
+    }
 
-            // Clean orphaned subscriptions entries by type_id
-            $orphanedIds = DB::table('subscriptions AS s')->leftJoin('subscription_types AS st', 'st.type_id', '=', 's.type_id')->whereNull('st.type_id')->distinct()->pluck('s.type_id');
-            foreach ($orphanedIds as $typeId) {
-                DB::table('subscriptions')->where('type_id', '=', $typeId)->delete();
-            }
+    protected function getEntityRelationships(): array
+    {
+        return [
+            $this->getContextTable() => ['submissions', 'issues', 'user_groups', 'sections', 'categories', 'subscription_types', 'navigation_menu_items', 'genres', 'filters', 'announcement_types', 'subscriptions', 'notifications', 'navigation_menus', 'library_files', 'email_templates', 'user_group_stage', 'subeditor_submission_group', 'plugin_settings', 'notification_subscription_settings', $this->getContextSettingsTable(), 'custom_issue_orders', 'completed_payments'],
+            'users' => ['submission_files', 'review_assignments', 'subscriptions', 'notifications', 'event_log', 'email_log', 'user_user_groups', 'user_settings', 'user_interests', 'temporary_files', 'submission_comments', 'subeditor_submission_group', 'stage_assignments', 'sessions', 'query_participants', 'notification_subscription_settings', 'notes', 'email_log_users', 'edit_decisions', 'completed_payments', 'access_keys'],
+            'submissions' => ['submission_files', 'publications', 'review_rounds', 'review_assignments', 'submission_search_objects', 'library_files', 'submission_settings', 'submission_comments', 'stage_assignments', 'review_round_files', 'edit_decisions'],
+            'submission_files' => ['submission_files', 'publication_galleys', 'submission_file_settings', 'submission_file_revisions', 'review_round_files', 'review_files'],
+            // publication_settings dependency added manually
+            'issues' => [$this->getContextTable(), 'issue_galleys', 'issue_files', 'issue_settings', 'custom_section_orders', 'custom_issue_orders', 'publication_settings'],
+            'user_groups' => ['authors', 'user_user_groups', 'user_group_stage', 'user_group_settings', 'subeditor_submission_group', 'stage_assignments'],
+            'publications' => ['submissions', 'publication_galleys', 'authors', 'citations', 'publication_settings', 'publication_categories'],
+            'publication_galleys' => ['publication_galley_settings'],
+            'review_forms' => ['sections', 'review_form_elements', 'review_assignments', 'review_form_settings'],
+            'categories' => ['categories', 'publication_categories', 'category_settings'],
+            'issue_galleys' => ['issue_galley_settings'],
+            'sections' => ['publications', 'section_settings', 'custom_section_orders'],
+            'review_rounds' => ['review_assignments', 'review_round_files', 'edit_decisions'],
+            'navigation_menu_item_assignments' => ['navigation_menu_item_assignments', 'navigation_menu_item_assignment_settings'],
+            'authors' => ['publications', 'author_settings'],
+            'controlled_vocab_entries' => ['user_interests', 'controlled_vocab_entry_settings'],
+            'data_object_tombstones' => ['data_object_tombstone_settings', 'data_object_tombstone_oai_set_objects'],
+            'files' => ['submission_files', 'submission_file_revisions'],
+            'filters' => ['filters', 'filter_settings'],
+            'genres' => ['submission_files', 'genre_settings'],
+            'announcement_types' => ['announcements', 'announcement_type_settings'],
+            'navigation_menu_items' => ['navigation_menu_item_assignments', 'navigation_menu_item_settings'],
+            'review_assignments' => ['review_form_responses', 'review_files'],
+            'review_form_elements' => ['review_form_responses', 'review_form_element_settings'],
+            'subscription_types' => ['subscriptions', 'subscription_type_settings'],
+            'announcements' => ['announcement_settings'],
+            'queries' => ['query_participants'],
+            'navigation_menus' => ['navigation_menu_item_assignments'],
+            'notifications' => ['notification_settings'],
+            'filter_groups' => ['filters'],
+            'event_log' => ['event_log_settings'],
+            'email_templates' => ['email_templates_settings'],
+            'static_pages' => ['static_page_settings'],
+            'email_log' => ['email_log_users'],
+            'submission_search_keyword_list' => ['submission_search_object_keywords'],
+            'submission_search_objects' => ['submission_search_object_keywords'],
+            'controlled_vocabs' => ['controlled_vocab_entries'],
+            'library_files' => ['library_file_settings'],
+            'subscriptions' => ['institutional_subscriptions'],
+            'citations' => ['citation_settings'],
+            'issue_files' => ['issue_galleys']
+        ];
+    }
 
-            // Clean orphaned institutional_subscriptions entries by subscription_id
-            $orphanedIds = DB::table('institutional_subscriptions AS i_s')->leftJoin('subscriptions AS s', 'i_s.subscription_id', '=', 's.subscription_id')->whereNull('s.subscription_id')->distinct()->pluck('i_s.subscription_id');
-            foreach ($orphanedIds as $subscriptionId) {
-                DB::table('institutional_subscriptions')->where('subscription_id', '=', $subscriptionId)->delete();
-            }
-
-            // Clean orphaned completed_payments entries by context_id
-            $orphanedIds = DB::table('completed_payments AS cp')->leftJoin('journals AS j', 'j.journal_id', '=', 'cp.context_id')->whereNull('j.journal_id')->distinct()->pluck('cp.context_id');
-            foreach ($orphanedIds as $journalId) {
-                DB::table('completed_payments')->where('context_id', '=', $journalId)->delete();
-            }
-
-            // Clean orphaned completed_payments entries by user_id
-            $orphanedIds = DB::table('completed_payments AS cp')->leftJoin('users AS u', 'u.user_id', '=', 'cp.user_id')->whereNull('u.user_id')->distinct()->pluck('cp.user_id');
-            foreach ($orphanedIds as $userId) {
-                DB::table('completed_payments')->where('user_id', '=', $userId)->delete();
-            }
-        } catch (\Exception $e) {
-            if ($fallbackVersion = $this->setFallbackVersion()) {
-                $this->_installer->log("A pre-flight check failed. The software was successfully upgraded to {$fallbackVersion} but could not be upgraded further (to " . $this->_installer->newVersion->getVersionString() . '). Check and correct the error, then try again.');
-            }
-            throw $e;
+    protected function dropForeignKeys(): void
+    {
+        parent::dropForeignKeys();
+        if (DB::getDoctrineSchemaManager()->introspectTable('publication_galleys')->hasForeignKey('publication_galleys_submission_file_id_foreign')) {
+            Schema::table('publication_galleys', fn (Blueprint $table) => $table->dropForeign('publication_galleys_submission_file_id_foreign'));
         }
     }
 }

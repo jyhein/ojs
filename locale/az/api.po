@@ -1,7 +1,7 @@
 # Osman Durmaz <osmandurmaz@hotmail.de>, 2023.
 msgid ""
 msgstr ""
-"PO-Revision-Date: 2023-03-17 01:01+0000\n"
+"PO-Revision-Date: 2023-06-02 22:43+0000\n"
 "Last-Translator: Osman Durmaz <osmandurmaz@hotmail.de>\n"
 "Language-Team: Azerbaijani <http://translate.pkp.sfu.ca/projects/ojs/api/az/>"
 "\n"
@@ -76,3 +76,6 @@ msgstr "Bu faylı dizayn mərhələsindəki bir fayl ilə əlaqələndirə bilm�
 
 msgid "api.contexts.404.contextNotFound"
 msgstr "Axtardığınız jurnal tapılmadı."
+
+msgid "api.submission.400.inactiveSection"
+msgstr "Bu bölmə artıq müraciətləri qəbul etmir."
