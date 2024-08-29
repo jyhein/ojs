@@ -28,6 +28,7 @@ use APP\journal\Journal;
 use APP\oai\ojs\OAIDAO;
 use APP\plugins\PubIdPlugin;
 use APP\submission\Submission;
+use PKP\controlledVocab\ControlledVocabEntry;
 use PKP\core\PKPApplication;
 use PKP\db\DAORegistry;
 use PKP\facades\Locale;
@@ -93,10 +94,10 @@ class Dc11SchemaArticleAdapter extends MetadataDataObjectAdapter
         $submissionKeywordDao = DAORegistry::getDAO('SubmissionKeywordDAO'); /** @var SubmissionKeywordDAO $submissionKeywordDao */
         $submissionSubjectDao = DAORegistry::getDAO('SubmissionSubjectDAO'); /** @var SubmissionSubjectDAO $submissionSubjectDao */
         $supportedLocales = $journal->getSupportedFormLocales();
-        $subjects = array_merge_recursive(
-            (array) $submissionKeywordDao->getKeywords($publication->getId(), $supportedLocales),
-            (array) $submissionSubjectDao->getSubjects($publication->getId(), $supportedLocales)
-        );
+        $subjects = collect((array) $submissionKeywordDao->getKeywords($publication->getId(), $supportedLocales))
+            ->mergeRecursive((array) $submissionSubjectDao->getSubjects($publication->getId(), $supportedLocales))
+            ->map(fn (array $items): array => array_column($items, ControlledVocabEntry::CONTROLLED_VOCAB_ENTRY_TERM))
+            ->toArray();
         $this->_addLocalizedElements($dc11Description, 'dc:subject', $subjects);
 
         // Description
