@@ -16,6 +16,7 @@ namespace APP\plugins\generic\dublinCoreMeta;
 
 use APP\facades\Repo;
 use APP\template\TemplateManager;
+use PKP\controlledVocab\ControlledVocabEntry;
 use PKP\core\PKPApplication;
 use PKP\plugins\GenericPlugin;
 use PKP\plugins\Hook;
@@ -179,7 +180,7 @@ class DublinCoreMetaPlugin extends GenericPlugin
         if ($keywords = $publication->getData('keywords')) {
             foreach ($keywords as $locale => $localeKeywords) {
                 foreach ($localeKeywords as $i => $keyword) {
-                    $templateMgr->addHeader('dublinCoreKeyword' . $locale . $i++, '<meta name="DC.Subject" xml:lang="' . htmlspecialchars(substr($locale, 0, 2)) . '" content="' . htmlspecialchars($keyword) . '"/>');
+                    $templateMgr->addHeader('dublinCoreKeyword' . $locale . $i++, '<meta name="DC.Subject" xml:lang="' . htmlspecialchars(substr($locale, 0, 2)) . '" content="' . htmlspecialchars($keyword[ControlledVocabEntry::CONTROLLED_VOCAB_ENTRY_TERM]) . '"/>');
                 }
             }
         }
